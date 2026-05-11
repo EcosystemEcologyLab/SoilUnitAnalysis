@@ -1,5 +1,5 @@
 {
-  "name": "your-repo-name",
+  "name": "SoilUnitAnalysis",
   "image": "ghcr.io/rocker-org/devcontainer/tidyverse:4.4",
 
   "features": {
