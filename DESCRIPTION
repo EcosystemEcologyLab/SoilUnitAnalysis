@@ -1,0 +1,16 @@
+Package: SoilUnitAnalysis
+Title: NRCS Soil Unit and NEON AOP Analysis for the Santa Rita Experimental Range
+Version: 0.0.0.9000
+Authors@R:
+    person("David", "Moore", , "davidjpmoore@arizona.edu", role = c("aut", "cre"))
+Description: Combines NRCS soil units with NEON AOP remote sensing products
+    to describe spatial patterns in plant species distribution and traits
+    on the Santa Rita Experimental Range. Not a distributable package — this
+    DESCRIPTION exists so that renv, roxygen2, and testthat tooling work.
+License: file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
