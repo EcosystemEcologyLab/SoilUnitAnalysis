@@ -11,7 +11,8 @@ query_ssurgo_polygons(aoi, db = "SSURGO")
 types are accepted; \code{sfc} is the natural output of \code{\link[sf:st_as_sfc]{sf::st_as_sfc()}} on
 a bounding box. The object must have a defined CRS; any projection is
 accepted and will be transformed internally. Fails loudly if \code{aoi} is
-neither \code{sf} nor \code{sfc}, or if the query returns zero features.}
+neither \code{sf} nor \code{sfc}, if the service is unreachable (the underlying
+SDA error message is forwarded), or if the query returns zero features.}
 
 \item{db}{SDA database to query. Passed to \code{\link[soilDB:SDA_spatialQuery]{soilDB::SDA_spatialQuery()}}.
 Defaults to \code{"SSURGO"}.}

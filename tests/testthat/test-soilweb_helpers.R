@@ -29,6 +29,32 @@ test_that("query_ssurgo_polygons() stops on non-sf non-sfc input", {
   )
 })
 
+test_that("query_ssurgo_polygons() stops with SDA error message on try-error result", {
+  sda_cond       <- simpleError("connection refused")
+  fake_try_error <- structure(
+    "Error in soilDB::SDA_spatialQuery() : connection refused\n",
+    class     = "try-error",
+    condition = sda_cond
+  )
+
+  aoi <- sf::st_as_sfc(
+    sf::st_bbox(
+      c(xmin = -110.855, ymin = 31.825, xmax = -110.845, ymax = 31.835),
+      crs = 4326
+    )
+  )
+
+  local_mocked_bindings(
+    SDA_spatialQuery = function(...) fake_try_error,
+    .package = "soilDB"
+  )
+
+  expect_error(
+    query_ssurgo_polygons(aoi),
+    regexp = "SDA_spatialQuery\\(\\) failed"
+  )
+})
+
 test_that("query_ssurgo_polygons() accepts sfc input (passes type check)", {
   aoi_sfc <- sf::st_as_sfc(
     sf::st_bbox(

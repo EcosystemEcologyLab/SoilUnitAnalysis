@@ -61,7 +61,8 @@ load_srer_boundary <- function(
 #'   types are accepted; `sfc` is the natural output of [sf::st_as_sfc()] on
 #'   a bounding box. The object must have a defined CRS; any projection is
 #'   accepted and will be transformed internally. Fails loudly if `aoi` is
-#'   neither `sf` nor `sfc`, or if the query returns zero features.
+#'   neither `sf` nor `sfc`, if the service is unreachable (the underlying
+#'   SDA error message is forwarded), or if the query returns zero features.
 #' @param db SDA database to query. Passed to [soilDB::SDA_spatialQuery()].
 #'   Defaults to `"SSURGO"`.
 #'
@@ -90,6 +91,12 @@ query_ssurgo_polygons <- function(aoi, db = "SSURGO") {
     geomIntersection = TRUE,
     db               = db
   )
+
+  if (inherits(result, "try-error")) {
+    cond <- attr(result, "condition")
+    msg  <- if (!is.null(cond)) conditionMessage(cond) else as.character(result)
+    stop("soilDB::SDA_spatialQuery() failed: ", msg, call. = FALSE)
+  }
 
   if (is.null(result) || nrow(result) == 0L) {
     stop(
