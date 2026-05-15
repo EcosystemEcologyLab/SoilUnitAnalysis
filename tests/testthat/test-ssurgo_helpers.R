@@ -104,21 +104,45 @@ test_that("read_gssurgo_mupolygon() stops on non-sf non-sfc AOI", {
   )
 })
 
-# --- read_gssurgo_raster() ---------------------------------------------------
+# --- rasterize_mupolygon() ---------------------------------------------------
 
-test_that("read_gssurgo_raster() stops on non-sf non-sfc AOI", {
-  fake_gdb <- tempfile()
-  dir.create(fake_gdb)
-  on.exit(unlink(fake_gdb, recursive = TRUE))
+test_that("rasterize_mupolygon() errors on input missing 'mukey' column", {
+  poly <- sf::st_sf(
+    id       = 1L,
+    geometry = sf::st_sfc(
+      sf::st_polygon(list(matrix(
+        c(0, 0, 100, 0, 100, 100, 0, 100, 0, 0), ncol = 2, byrow = TRUE
+      ))),
+      crs = 5070L
+    )
+  )
+  expect_error(rasterize_mupolygon(poly), regexp = "mukey")
+})
 
-  expect_error(
-    read_gssurgo_raster(fake_gdb, aoi = data.frame(x = 1)),
-    regexp = "sf or sfc object"
+test_that("rasterize_mupolygon() returns raster with at least three distinct non-NA values", {
+  make_rect <- function(xmin, ymin, xmax, ymax) {
+    sf::st_polygon(list(matrix(
+      c(xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax, xmin, ymin),
+      ncol = 2, byrow = TRUE
+    )))
+  }
+
+  polys <- sf::st_sf(
+    mukey    = c("100001", "100002", "100003"),
+    geometry = sf::st_sfc(
+      make_rect(0,   0, 100, 100),
+      make_rect(100, 0, 200, 100),
+      make_rect(200, 0, 300, 100),
+      crs = 5070L
+    )
   )
-  expect_error(
-    read_gssurgo_raster(fake_gdb, aoi = 42L),
-    regexp = "sf or sfc object"
-  )
+
+  r <- rasterize_mupolygon(polys, resolution = 10)
+
+  expect_s4_class(r, "SpatRaster")
+  vals         <- terra::values(r, na.rm = TRUE)
+  distinct_n   <- length(unique(vals[!is.na(vals)]))
+  expect_gte(distinct_n, 3L)
 })
 
 # --- read_gssurgo_table() ----------------------------------------------------

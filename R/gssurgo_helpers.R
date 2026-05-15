@@ -95,12 +95,17 @@ extract_gssurgo_zip <- function(zip_path, dest_dir) {
 #' function does not reproject, keeping the CRS used for clipping explicit in
 #' the calling script.
 #'
+#' The MUPOLYGON feature class uses an uppercase `MUKEY` column; this function
+#' normalizes it to lowercase `mukey` so callers can assume lowercase throughout
+#' (matching the tabular tables `Valu1`, `component`, and `chorizon`).
+#'
 #' @param gdb_path Path to the `gSSURGO_AZ.gdb` directory.
 #' @param aoi An `sf` or `sfc` object defining the area of interest, already
 #'   in EPSG:5070. Must not be empty. Fails loudly if `aoi` is not `sf`/`sfc`
 #'   or if zero polygons intersect the AOI.
 #'
-#' @return An `sf` polygon object of MUPOLYGON features intersecting `aoi`.
+#' @return An `sf` polygon object of MUPOLYGON features intersecting `aoi`,
+#'   with the key column normalized to lowercase `mukey`.
 #' @export
 read_gssurgo_mupolygon <- function(gdb_path, aoi) {
   if (!inherits(aoi, c("sf", "sfc"))) {
@@ -115,7 +120,18 @@ read_gssurgo_mupolygon <- function(gdb_path, aoi) {
   }
 
   mupolygon <- sf::st_read(gdb_path, layer = "MUPOLYGON", quiet = TRUE)
-  result    <- sf::st_filter(mupolygon, aoi)
+
+  # MUPOLYGON ships with uppercase MUKEY; normalize to lowercase so all
+  # downstream code can assume mukey (matching Valu1, component, chorizon).
+  names(mupolygon)[names(mupolygon) == "MUKEY"] <- "mukey"
+  if (!"mukey" %in% names(mupolygon)) {
+    stop(sprintf(
+      "read_gssurgo_mupolygon(): 'mukey' column not found after MUKEY->mukey normalization.\n  Actual column names: %s",
+      paste(names(mupolygon), collapse = ", ")
+    ), call. = FALSE)
+  }
+
+  result <- sf::st_filter(mupolygon, aoi)
 
   if (nrow(result) == 0L) {
     stop(
@@ -128,63 +144,71 @@ read_gssurgo_mupolygon <- function(gdb_path, aoi) {
 }
 
 
-#' Read the MapunitRaster_10m layer from a gSSURGO FileGeodatabase
+#' Rasterize MUPOLYGON to an integer mukey grid
 #'
-#' Reads the MapunitRaster_10m raster from the FileGeodatabase at `gdb_path`
-#' using [terra::rast()], then crops and masks it to `aoi`.
+#' Generates a rasterized representation of MUPOLYGON at the requested
+#' resolution by calling [terra::rasterize()]. **This is not the official NRCS
+#' MapunitRaster_10m.** The GDAL 3.8.4 OpenFileGDB driver in this environment
+#' does not expose FileGDB raster layers, so the raster is generated from the
+#' MUPOLYGON vector instead.
 #'
-#' **The caller is responsible for reprojecting `aoi` to the gSSURGO native
-#' CRS (EPSG:5070, CONUS Albers Equal Area) before passing it in.** This
-#' function does not reproject.
+#' The output is functionally equivalent to MapunitRaster_10m for the
+#' rasterized area — cell values are the same mukeys placed on the same 10 m
+#' grid — but is not bitwise-identical: sub-cell boundary placement may differ.
 #'
-#' GDAL's OpenFileGDB driver (GDAL >= 3.6) is required to read rasters from
-#' the FileGDB format. The function calls [terra::describe()] to enumerate
-#' subdatasets and selects the one named `MapunitRaster_10m`.
+#' The template raster extent is snapped so the bounding box of `mupolygon` is
+#' an integer multiple of `resolution` in EPSG:5070. This ensures downstream
+#' alignment with AOP rasters defined on the same EPSG:5070 grid.
 #'
-#' @param gdb_path Path to the `gSSURGO_AZ.gdb` directory.
-#' @param aoi An `sf` or `sfc` object defining the clip extent, already in
-#'   EPSG:5070. Fails loudly if `aoi` is not `sf`/`sfc` or if the clipped
-#'   raster contains zero non-NA cells.
+#' @param mupolygon An `sf` polygon object with a `"mukey"` column, in
+#'   EPSG:5070 (the gSSURGO native CRS). Typically the output of
+#'   [read_gssurgo_mupolygon()].
+#' @param resolution Cell size in metres. Default is `10`.
 #'
-#' @return A [terra::SpatRaster] of mukey values cropped and masked to `aoi`.
+#' @return A [terra::SpatRaster] of integer mukey values covering `mupolygon`,
+#'   at `resolution` metres, in EPSG:5070.
 #' @export
-read_gssurgo_raster <- function(gdb_path, aoi) {
-  if (!inherits(aoi, c("sf", "sfc"))) {
+rasterize_mupolygon <- function(mupolygon, resolution = 10) {
+  if (!inherits(mupolygon, "sf")) {
     stop(sprintf(
-      "aoi must be an sf or sfc object; got class '%s'.",
-      paste(class(aoi), collapse = "/")
+      "mupolygon must be an sf object; got class '%s'.",
+      paste(class(mupolygon), collapse = "/")
     ), call. = FALSE)
   }
 
-  if (!dir.exists(gdb_path)) {
-    stop(sprintf("GDB directory not found: %s", gdb_path), call. = FALSE)
-  }
-
-  sds <- terra::describe(gdb_path, sds = TRUE)
-  rast_idx <- which(sds[["var"]] == "MapunitRaster_10m")
-
-  if (length(rast_idx) == 0L) {
+  if (!"mukey" %in% names(mupolygon)) {
     stop(sprintf(
-      "MapunitRaster_10m not found in GDB: %s\n  Available raster layers: %s",
-      gdb_path,
-      if (nrow(sds) == 0L) "(none)" else paste(sds[["var"]], collapse = ", ")
+      "rasterize_mupolygon(): mupolygon must have a 'mukey' column.\n  Actual column names: %s",
+      paste(names(mupolygon), collapse = ", ")
     ), call. = FALSE)
   }
 
-  r       <- terra::rast(sds[["name"]][rast_idx[1L]])
-  aoi_v   <- terra::vect(aoi)
-  r_crop  <- terra::crop(r, aoi_v)
-  r_mask  <- terra::mask(r_crop, aoi_v)
+  bb   <- sf::st_bbox(mupolygon)
+  xmin <- floor(bb["xmin"]   / resolution) * resolution
+  ymin <- floor(bb["ymin"]   / resolution) * resolution
+  xmax <- ceiling(bb["xmax"] / resolution) * resolution
+  ymax <- ceiling(bb["ymax"] / resolution) * resolution
 
-  n_valid <- terra::global(!is.na(r_mask), "sum")[[1L]]
+  template <- terra::rast(
+    xmin       = xmin, xmax = xmax,
+    ymin       = ymin, ymax = ymax,
+    resolution = resolution,
+    crs        = terra::crs(terra::vect(sf::st_geometry(mupolygon)))
+  )
+
+  v        <- terra::vect(mupolygon)
+  v$mukey  <- as.integer(as.character(v$mukey))
+  r        <- terra::rasterize(v, template, field = "mukey")
+
+  n_valid <- terra::global(!is.na(r), "sum")[[1L]]
   if (n_valid == 0L) {
     stop(
-      "read_gssurgo_raster(): raster has zero non-NA cells after masking to AOI.\n  Confirm the AOI is in EPSG:5070 before calling this function.",
+      "rasterize_mupolygon(): rasterized output has zero non-NA cells.\n  Confirm mupolygon is in EPSG:5070 and is not empty.",
       call. = FALSE
     )
   }
 
-  r_mask
+  r
 }
 
 

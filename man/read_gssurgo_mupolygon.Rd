@@ -14,7 +14,8 @@ in EPSG:5070. Must not be empty. Fails loudly if \code{aoi} is not \code{sf}/\co
 or if zero polygons intersect the AOI.}
 }
 \value{
-An \code{sf} polygon object of MUPOLYGON features intersecting \code{aoi}.
+An \code{sf} polygon object of MUPOLYGON features intersecting \code{aoi},
+with the key column normalized to lowercase \code{mukey}.
 }
 \description{
 Reads the MUPOLYGON feature class from the FileGeodatabase at \code{gdb_path}
@@ -25,4 +26,8 @@ using \code{\link[sf:st_read]{sf::st_read()}} and spatially intersects the resul
 CRS (EPSG:5070, CONUS Albers Equal Area) before passing it in.} This
 function does not reproject, keeping the CRS used for clipping explicit in
 the calling script.
+
+The MUPOLYGON feature class uses an uppercase \code{MUKEY} column; this function
+normalizes it to lowercase \code{mukey} so callers can assume lowercase throughout
+(matching the tabular tables \code{Valu1}, \code{component}, and \code{chorizon}).
 }
